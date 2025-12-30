@@ -1,89 +1,130 @@
 // src/pages/ClientDashboard.jsx
 import { useAuth } from '../context/AuthContext';
 import { useState, useEffect } from 'react';
-import { FaUser, FaCalendarAlt, FaComment, FaWhatsapp, FaTelegram, FaEnvelope, FaStar, FaTrash, FaEdit, FaCheck, FaTimes } from 'react-icons/fa';
+import { FaUser, FaCalendarAlt, FaComment, FaStar, FaWhatsapp, FaTelegram, FaEnvelope } from 'react-icons/fa';
 
 export default function ClientDashboard() {
   const { currentUser } = useAuth();
-  const [client, setClient] = useState(null);
+  const [clients] = useState(() => JSON.parse(sessionStorage.getItem('clients') || '[]'));
+  const [services] = useState(() => [
+    { id: 1, name: 'Классический массаж', duration: 60, price: 3000 },
+    { id: 2, name: 'Спортивный массаж', duration: 90, price: 4500 },
+    { id: 3, name: 'Лимфодренажный', duration: 60, price: 3500 },
+  ]);
   const [appointments, setAppointments] = useState([]);
   const [reviews, setReviews] = useState([]);
-  const [services, setServices] = useState([]);
-  const [notification, setNotification] = useState(null);
-  const [isVisible, setIsVisible] = useState(false);
+  const [chat, setChat] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [showChat, setShowChat] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [otherIsTyping, setOtherIsTyping] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
+  const [lastSeen, setLastSeen] = useState(null);
+  const [clientNotifications, setClientNotifications] = useState([]);
 
-  // Форма новой записи
-  const [booking, setBooking] = useState({ serviceId: '', date: '', time: '' });
   const [bookingStep, setBookingStep] = useState('form');
-  const [bookingError, setBookingError] = useState('');
-
-  // Редактирование
-  const [editing, setEditing] = useState(null);
-  const [editForm, setEditForm] = useState({ serviceId: '', date: '', time: '' });
-  const [editError, setEditError] = useState('');
+  const [booking, setBooking] = useState({
+    serviceId: '',
+    date: '',
+    time: '',
+  });
 
   useEffect(() => {
-    if (!currentUser) return;
-    setIsVisible(true);
-
-    fetch('/db.json')
-      .then(res => res.json())
-      .then(data => {
-        const clientData = data.clients.find(c => c.user_id === currentUser.id);
-        const clientReviews = data.reviews
-          .filter(r => r.client_id === currentUser.id)
-          .map(r => ({
-            ...r,
-            service_name: data.services.find(s => s.id === r.service_id)?.name || 'Услуга'
-          }));
-
-        setClient(clientData);
-        setServices(data.services);
-        setReviews(clientReviews);
-      });
-
-    const saved = localStorage.getItem('appointments');
-    if (saved) {
-      const allAppointments = JSON.parse(saved);
-      const userAppointments = allAppointments
-        .filter(a => a.client_id === currentUser.id)
-        .map(a => ({
-          ...a,
-          service_name: services.find(s => s.id === a.service_id)?.name || 'Услуга'
-        }));
-      setAppointments(userAppointments);
-    }
+    document.title = `Личный кабинет • ${currentUser.name}`;
   }, [currentUser]);
 
+  // Уведомления
   useEffect(() => {
-    if (appointments.length > 0) {
-      const existing = JSON.parse(localStorage.getItem('appointments') || '[]');
-      const filtered = existing.filter(a => a.client_id !== currentUser.id);
-      const updated = [...filtered, ...appointments];
-      localStorage.setItem('appointments', JSON.stringify(updated));
+    const savedNotifications = JSON.parse(sessionStorage.getItem(`notifications_${currentUser.id}`) || '[]');
+    setClientNotifications(savedNotifications);
+  }, [currentUser.id]);
+
+  // Загрузка данных
+  useEffect(() => {
+    const savedAppointments = JSON.parse(sessionStorage.getItem('appointments') || '[]');
+    const savedReviews = JSON.parse(sessionStorage.getItem('reviews') || '[]');
+    const savedChat = JSON.parse(sessionStorage.getItem('chat_messages') || '[]');
+
+    setAppointments(savedAppointments.filter(a => a.client_id === currentUser.id));
+    setReviews(savedReviews.filter(r => r.client_id === currentUser.id));
+    setChat(savedChat);
+
+    // Прокрутка чата
+    if (showChat) {
+      const el = document.getElementById('chat-box');
+      if (el) el.scrollTop = el.scrollHeight;
     }
-  }, [appointments, currentUser]);
+  }, [showChat]);
 
-  // --- Новая запись ---
-  const handleBookingChange = (e) => {
-    const { name, value } = e.target;
-    setBooking(prev => ({ ...prev, [name]: value }));
-  };
+  // Онлайн статус
+  useEffect(() => {
+    setIsOnline(true);
+    sessionStorage.setItem('user_online', currentUser.id);
+    sessionStorage.setItem('last_seen_' + currentUser.id, new Date().toISOString());
 
-  const validateBooking = () => {
-    if (!booking.serviceId || !booking.date || !booking.time) {
-      setBookingError('Выберите услугу, дату и время');
-      return false;
+    const entryMessage = {
+      id: Date.now(),
+      type: 'system',
+      text: 'Клиент вошёл в чат',
+      timestamp: new Date().toISOString(),
+    };
+
+    const savedChat = JSON.parse(sessionStorage.getItem('chat_messages') || '[]');
+    const updatedChat = [...savedChat, entryMessage];
+    setChat(updatedChat);
+    sessionStorage.setItem('chat_messages', JSON.stringify(updatedChat));
+
+    const handleUnload = () => {
+      setIsOnline(false);
+      sessionStorage.removeItem('user_online');
+      sessionStorage.setItem('last_seen_' + currentUser.id, new Date().toISOString());
+
+      const exitMessage = {
+        id: Date.now() + 1,
+        type: 'system',
+        text: 'Клиент вышел из чата',
+        timestamp: new Date().toISOString(),
+      };
+
+      const finalChat = [...updatedChat, exitMessage];
+      sessionStorage.setItem('chat_messages', JSON.stringify(finalChat));
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [currentUser.id]);
+
+  // Следим за "печатает…"
+  useEffect(() => {
+    if (newMessage) {
+      setIsTyping(true);
+      sessionStorage.setItem('user_typing', currentUser.id);
+    } else {
+      setIsTyping(false);
+      sessionStorage.removeItem('user_typing');
     }
-    setBookingError('');
-    return true;
-  };
+  }, [newMessage]);
 
-  const submitBooking = (e) => {
-    e.preventDefault();
-    if (!validateBooking()) return;
-    setBookingStep('confirm');
-  };
+  useEffect(() => {
+    const check = () => {
+      const typing = sessionStorage.getItem('user_typing');
+      setOtherIsTyping(typing === 'admin');
+    };
+    const interval = setInterval(check, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Следим за онлайном админа
+  useEffect(() => {
+    const check = () => {
+      const online = sessionStorage.getItem('user_online') === 'admin';
+      const last = sessionStorage.getItem('last_seen_admin');
+      setIsOnline(online);
+      setLastSeen(last);
+    };
+    const interval = setInterval(check, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const confirmBooking = () => {
     const newAppointment = {
@@ -97,620 +138,513 @@ export default function ClientDashboard() {
 
     const service = services.find(s => s.id == booking.serviceId);
 
-    setAppointments([
+    const updated = [
       {
         ...newAppointment,
         service_name: service?.name || 'Услуга'
       },
       ...appointments
-    ]);
+    ];
+
+    setAppointments(updated);
+    sessionStorage.setItem('appointments', JSON.stringify(updated));
     setBookingStep('success');
   };
 
-  const resetBooking = () => {
-    setBooking({ serviceId: '', date: '', time: '' });
-    setBookingStep('form');
-    setBookingError('');
+  const sendMessage = () => {
+    if (!newMessage.trim()) return;
+
+    const formatted = newMessage
+      .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+      .replace(/_(.*?)_/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#4f46e5;text-decoration:underline;">$1</a>');
+
+    const msg = {
+      id: Date.now(),
+      text: formatted,
+      sender: 'client',
+      timestamp: new Date().toISOString(),
+      isHtml: true,
+    };
+
+    const updated = [...chat, msg];
+    setChat(updated);
+    setNewMessage('');
+    sessionStorage.setItem('chat_messages', JSON.stringify(updated));
+
+    const el = document.getElementById('chat-box');
+    if (el) el.scrollTop = el.scrollHeight;
   };
 
-  // --- Редактирование ---
-  const startEditing = (app) => {
-    setEditing(app.id);
-    setEditForm({
-      serviceId: app.service_id.toString(),
-      date: app.date,
-      time: app.time,
-    });
-    setEditError('');
-  };
-
-  const cancelEditing = () => {
-    setEditing(null);
-    setEditForm({ serviceId: '', date: '', time: '' });
-    setEditError('');
-  };
-
-  const handleEditChange = (e) => {
-    const { name, value } = e.target;
-    setEditForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  const saveEdit = () => {
-    if (!editForm.serviceId || !editForm.date || !editForm.time) {
-      setEditError('Заполните все поля');
-      return;
-    }
-
-    const updatedAppointments = appointments.map(app =>
-      app.id === editing
-        ? {
-            ...app,
-            service_id: Number(editForm.serviceId),
-            date: editForm.date,
-            time: editForm.time,
-            service_name: services.find(s => s.id === Number(editForm.serviceId))?.name || 'Услуга'
-          }
-        : app
-    );
-
-    setAppointments(updatedAppointments);
-    setEditing(null);
-    setEditError('');
-  };
-
-  // --- Отмена записи (с уведомлением) ---
-  const deleteAppointment = (id) => {
-    if (window.confirm('Вы действительно хотите отменить эту запись?')) {
-      setAppointments(
-        appointments.map(app =>
-          app.id === id ? { ...app, status: 'Отменена' } : app
-        )
-      );
-      setNotification('Запись отменена');
-      setTimeout(() => setNotification(null), 3000);
+  const clearChat = () => {
+    if (window.confirm('Очистить чат?')) {
+      setChat([]);
+      sessionStorage.setItem('chat_messages', JSON.stringify([]));
     }
   };
 
-  if (!client) return <div style={styles.loading}>Загрузка...</div>;
+  const emojis = ['😊', '👍', '❤️', '🎉', '👏', '🙏', '🔥', '💡', '🚀', '💯'];
+  const [showEmoji, setShowEmoji] = useState(false);
+  const insertEmoji = (e) => setNewMessage(p => p + e);
 
   return (
     <div style={styles.container}>
-      {/* Уведомление */}
-      {notification && (
-        <div style={styles.notification}>
-          {notification}
+      {/* Уведомления */}
+      {clientNotifications.map(n => (
+        <div key={n.id} style={{ ...styles.notification, backgroundColor: n.type === 'error' ? '#fee2e2' : '#dcfce7' }}>
+          {n.text}
+          <button onClick={() => {
+            const filtered = clientNotifications.filter(nn => nn.id !== n.id);
+            setClientNotifications(filtered);
+            sessionStorage.setItem(`notifications_${currentUser.id}`, JSON.stringify(filtered));
+          }} style={styles.closeNotif}>✕</button>
+        </div>
+      ))}
+
+      <h1>Личный кабинет, {currentUser.name}</h1>
+
+      {/* Запись */}
+      {bookingStep === 'form' && (
+        <section>
+          <h2>Записаться на приём</h2>
+          <select value={booking.serviceId} onChange={e => setBooking({ ...booking, serviceId: e.target.value })} style={styles.input}>
+            <option value="">Выберите услугу</option>
+            {services.map(s => <option key={s.id} value={s.id}>{s.name} — {s.price}₽</option>)}
+          </select>
+          <input type="date" value={booking.date} onChange={e => setBooking({ ...booking, date: e.target.value })} style={styles.input} />
+          <input type="time" value={booking.time} onChange={e => setBooking({ ...booking, time: e.target.value })} style={styles.input} />
+          <button onClick={confirmBooking} style={styles.button}>Записаться</button>
+        </section>
+      )}
+
+      {bookingStep === 'success' && (
+        <div style={styles.success}>
+          <h2>✅ Запись оформлена!</h2>
+          <p>Ожидайте подтверждения от администратора.</p>
+          <button onClick={() => setBookingStep('form')} style={styles.button}>К записям</button>
         </div>
       )}
 
-      {/* Hero */}
-      <section
-        style={{
-          ...styles.hero,
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0)' : 'translateY(-20px)',
-          transition: 'opacity 0.8s ease, transform 0.8s ease',
-        }}
-      >
-        <h1 style={styles.heroTitle}>Личный кабинет</h1>
-        <p style={styles.heroText}>
-          Добро пожаловать, {client.name.split(' ')[0]}! Здесь вы управляете записями и отзывами.
-        </p>
+      {/* Записи */}
+      <section>
+        <h2><FaCalendarAlt /> Мои записи</h2>
+        {appointments.length === 0 ? (
+          <p>Нет записей</p>
+        ) : (
+          <ul>
+            {appointments.map(a => (
+              <li key={a.id} style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #ddd', borderRadius: '8px' }}>
+                <strong>{a.service_name}</strong> — {new Date(a.date).toLocaleDateString('ru-RU')}, {a.time} <br />
+                <span style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '999px',
+                  fontSize: '0.9rem',
+                  fontWeight: '500',
+                  backgroundColor:
+                    a.status === 'Подтверждена' ? '#dcfce7' :
+                    a.status === 'Завершена' ? '#dbeafe' :
+                    a.status === 'Отменена' ? '#fee2e2' : '#fef9c3',
+                  color:
+                    a.status === 'Подтверждена' ? '#166534' :
+                    a.status === 'Завершена' ? '#1e40af' :
+                    a.status === 'Отменена' ? '#991b1b' : '#854d0e',
+                }}>{a.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
-      {/* Личные данные */}
-      <div
-        style={{
-          ...styles.section,
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-          transition: 'opacity 0.8s ease 0.2s, transform 0.8s ease 0.2s',
-        }}
-      >
-        <h2 style={styles.title}>Личные данные</h2>
-        <div style={styles.profile}>
-          <p><strong>Имя:</strong> {client.name}</p>
-          <p><strong>Телефон:</strong> {client.phone}</p>
-          <p><strong>Посещений:</strong> {client.visit_count}</p>
-          <p><strong>Последнее:</strong> {client.last_visit ? new Date(client.last_visit).toLocaleDateString('ru-RU') : '—'}</p>
-          <p><strong>Любимая услуга:</strong> {client.favorite_service || '—'}</p>
-        </div>
-      </div>
-
-      {/* Форма записи */}
-      <div
-        style={{
-          ...styles.section,
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-          transition: 'opacity 0.8s ease 0.3s, transform 0.8s ease 0.3s',
-        }}
-      >
-        <h2 style={styles.title}>Записаться на приём</h2>
-
-        {bookingStep === 'form' && (
-          <form onSubmit={submitBooking} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Услуга</label>
-              <select
-                name="serviceId"
-                value={booking.serviceId}
-                onChange={handleBookingChange}
-                style={styles.input}
-              >
-                <option value="">Выберите услугу</option>
-                {services.map(service => (
-                  <option key={service.id} value={service.id}>
-                    {service.name} — {service.price} ₽ ({service.duration} мин)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Дата</label>
-              <input
-                type="date"
-                name="date"
-                value={booking.date}
-                onChange={handleBookingChange}
-                min={new Date().toISOString().split('T')[0]}
-                style={styles.input}
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Время</label>
-              <input
-                type="time"
-                name="time"
-                value={booking.time}
-                onChange={handleBookingChange}
-                style={styles.input}
-              />
-            </div>
-
-            {bookingError && <p style={styles.error}>{bookingError}</p>}
-
-            <button type="submit" style={styles.button}>
-              Далее
-            </button>
-          </form>
-        )}
-
-        {bookingStep === 'confirm' && (
-          <div style={styles.confirm}>
-            <h3>Подтвердите запись</h3>
-            <p><strong>Услуга:</strong> {services.find(s => s.id == booking.serviceId)?.name}</p>
-            <p><strong>Дата:</strong> {booking.date}, {booking.time}</p>
-            <p><strong>Имя:</strong> {client.name}</p>
-            <p><strong>Телефон:</strong> {client.phone}</p>
-            <div style={styles.buttonGroup}>
-              <button onClick={resetBooking} style={styles.cancelBtn}>Назад</button>
-              <button onClick={confirmBooking} style={styles.confirmBtn}>Подтвердить</button>
-            </div>
+      {/* Отзывы */}
+      <section>
+        <h2><FaStar /> Мои отзывы</h2>
+        {reviews.map(r => (
+          <div key={r.id} style={{ border: '1px solid #eee', padding: '1rem', margin: '0.5rem 0', borderRadius: '8px' }}>
+            <p>{r.text}</p>
+            <small>Рейтинг: {r.rating} ⭐</small>
           </div>
-        )}
+        ))}
+      </section>
 
-        {bookingStep === 'success' && (
-          <div style={styles.success}>
-            <h3>✅ Запись создана!</h3>
-            <p>Ваша заявка принята. Мастер свяжется для подтверждения.</p>
-            <button onClick={resetBooking} style={styles.button}>Создать ещё</button>
-          </div>
-        )}
-      </div>
+      {/* Чат */}
+      <button onClick={() => setShowChat(true)} style={styles.chatButton}>💬 Чат с мастером</button>
 
-      {/* Мои записи */}
-      <div
-        style={{
-          ...styles.section,
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-          transition: 'opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s',
-        }}
-      >
-        <h2 style={styles.title}>Мои записи</h2>
-        {appointments.length === 0 ? (
-          <p style={styles.empty}>У вас пока нет записей</p>
-        ) : (
-          <div style={styles.appointments}>
-            {appointments.map(app => (
-              <div key={app.id} style={styles.appointmentCard}>
-                {editing === app.id ? (
-                  <div style={styles.editForm}>
-                    <h4 style={styles.editTitle}>Редактировать</h4>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Услуга</label>
-                      <select
-                        name="serviceId"
-                        value={editForm.serviceId}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      >
-                        <option value="">Выберите</option>
-                        {services.map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
+      {showChat && (
+        <div style={styles.chatModal}>
+          <div style={styles.chatContainer}>
+            <div style={styles.chatHeader}>
+              <h3>
+                Чат с мастером
+                <span style={styles.onlineStatus}>
+                  <span style={{ ...styles.dot, backgroundColor: isOnline ? '#10b981' : '#94a3b8' }}></span>
+                  {isOnline ? 'В сети' : lastSeen ? `Был в сети ${new Date(lastSeen).toLocaleTimeString('ru-RU')}` : 'Неизвестно'}
+                </span>
+              </h3>
+              <button onClick={() => setShowChat(false)} style={styles.closeButton}>✕</button>
+            </div>
+
+            <div id="chat-box" style={styles.chatBox}>
+              {chat.length === 0 ? (
+                <p style={styles.emptyChat}>Пока нет сообщений</p>
+              ) : (
+                chat.map(msg => {
+                  if (msg.type === 'system') {
+                    return <div key={msg.id} style={styles.systemMessage}><small>{msg.text}</small></div>;
+                  }
+                  return (
+                    <div
+                      key={msg.id}
+                      style={{
+                        ...styles.chatMessage,
+                        ...(msg.sender === 'client' ? styles.clientMsg : styles.adminMsg),
+                        textAlign: msg.sender === 'client' ? 'right' : 'left',
+                      }}
+                    >
+                      <div style={styles.msgBubble}>
+                        <div
+                          style={styles.msgText}
+                          dangerouslySetInnerHTML={{ __html: msg.text }}
+                        />
+                        <small style={styles.msgTime}>
+                          {new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                        </small>
+                      </div>
                     </div>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Дата</label>
-                      <input
-                        type="date"
-                        name="date"
-                        value={editForm.date}
-                        onChange={handleEditChange}
-                        min={new Date().toISOString().split('T')[0]}
-                        style={styles.input}
-                      />
-                    </div>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Время</label>
-                      <input
-                        type="time"
-                        name="time"
-                        value={editForm.time}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                    </div>
-                    {editError && <p style={styles.error}>{editError}</p>}
-                    <div style={styles.buttonGroup}>
-                      <button onClick={cancelEditing} style={styles.cancelBtn}><FaTimes /> Отмена</button>
-                      <button onClick={saveEdit} style={styles.confirmBtn}><FaCheck /> Сохранить</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={styles.appointmentHeader}>
-                    <div>
-                      <h4 style={styles.cardTitle}>{app.service_name}</h4>
-                      <p style={styles.cardText}>{new Date(app.date).toLocaleDateString('ru-RU')}, {app.time}</p>
-                    </div>
-                    <div style={styles.buttonGroup}>
-                      <button onClick={() => startEditing(app)} style={styles.iconButton}><FaEdit /></button>
-                      <button onClick={() => deleteAppointment(app.id)} style={styles.iconButton}><FaTrash /></button>
-                    </div>
+                  );
+                })
+              )}
+              {otherIsTyping && <div style={styles.typingIndicator}><small>Печатает…</small></div>}
+            </div>
+
+            <div style={styles.chatInputContainer}>
+              <div style={styles.formatHint}>
+                <small>Формат: *жирный*, _курсив_, [текст](ссылка)</small>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={e => setNewMessage(e.target.value)}
+                  onKeyPress={e => e.key === 'Enter' && sendMessage()}
+                  placeholder="Напишите сообщение..."
+                  style={styles.chatInput}
+                />
+                <button onClick={() => setShowEmoji(!showEmoji)} style={styles.emojiButton}>😊</button>
+                {showEmoji && (
+                  <div style={styles.emojiPicker}>
+                    {emojis.map(e => (
+                      <span key={e} style={styles.emojiItem} onClick={() => insertEmoji(e)}>{e}</span>
+                    ))}
                   </div>
                 )}
-                <span style={{ ...styles.status, ...styles.status[app.status] }}>{app.status}</span>
               </div>
-            ))}
+              <button onClick={sendMessage} style={styles.sendButton}>Отправить</button>
+              <button onClick={clearChat} style={styles.clearChatButton}>🗑 Очистить</button>
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* Отзывы */}
-      <div
-        style={{
-          ...styles.section,
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-          transition: 'opacity 0.8s ease 0.5s, transform 0.8s ease 0.5s',
-        }}
-      >
-        <h2 style={styles.title}>Мои отзывы</h2>
-        {reviews.length === 0 ? (
-          <p style={styles.empty}>Пока нет отзывов</p>
-        ) : (
-          <div style={styles.reviews}>
-            {reviews.map(r => (
-              <div key={r.id} style={styles.reviewCard}>
-                <div style={styles.reviewHeader}>
-                  <div style={styles.reviewStars}>
-                    {Array.from({ length: r.rating }).map((_, i) => <FaStar key={i} size={14} color="#fbbf24" />)}
-                  </div>
-                </div>
-                <p style={styles.reviewText}>{r.text}</p>
-                <small style={styles.reviewDate}>{new Date(r.created_at).toLocaleDateString('ru-RU')}</small>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Связь */}
-      <div
-        style={{
-          textAlign: 'center',
-          padding: '3rem 1rem',
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-          transition: 'opacity 0.8s ease 0.6s, transform 0.8s ease 0.6s',
-        }}
-      >
-        <h2 style={styles.title}>Связь с мастером</h2>
+      <section>
+        <h2>Связь</h2>
         <div style={styles.contactButtons}>
-          <a href="https://wa.me/79255616201" target="_blank" rel="noreferrer" style={styles.contactBtn}>
-            <FaWhatsapp /> WhatsApp
-          </a>
-          <a href="https://t.me/katya_massage" target="_blank" rel="noreferrer" style={styles.contactBtn}>
-            <FaTelegram /> Telegram
-          </a>
-          <a href="mailto:gorelovaee01@gmail.com" style={styles.contactBtn}>
-            <FaEnvelope /> Email
-          </a>
+          <a href="https://wa.me/79255616201" target="_blank" rel="noreferrer" style={styles.contactBtn}><FaWhatsapp /> WhatsApp</a>
+          <a href="https://t.me/katya_massage" target="_blank" rel="noreferrer" style={styles.contactBtn}><FaTelegram /> Telegram</a>
+          <a href="mailto:gorelovaee01@gmail.com" style={styles.contactBtn}><FaEnvelope /> Email</a>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-// === STYLES ===
+// === СТИЛИ ===
 const styles = {
   container: {
-    padding: '0',
-    maxWidth: '1200px',
+    padding: '2rem',
+    fontFamily: 'Arial, sans-serif',
+    maxWidth: '900px',
     margin: '0 auto',
-    fontFamily: 'Inter, -apple-system, sans-serif',
-    backgroundColor: '#f9fafb',
-  },
-
-  // Hero
-  hero: {
-    textAlign: 'center',
-    padding: '6rem 1.5rem 5rem',
-    background: 'linear-gradient(135deg, #f0f5ff 0%, #eef2ff 100%)',
-    color: '#1e293b',
-    margin: '0 0 4rem 0',
-    borderRadius: '0 0 20px 20px',
-  },
-  heroTitle: {
-    fontSize: '3rem',
-    margin: '0 0 1rem 0',
-    fontWeight: '700',
-    color: '#1e3a8a',
-    fontFamily: '"Playfair Display", serif',
-  },
-  heroText: {
-    fontSize: '1.25rem',
-    color: '#475569',
-    maxWidth: '700px',
-    margin: '0 auto 2rem',
-    lineHeight: '1.7',
-  },
-
-  // Общие стили
-  section: {
-    padding: '4rem 2rem',
-  },
-  title: {
-    fontSize: '2.5rem',
-    textAlign: 'center',
-    marginBottom: '2.5rem',
-    fontFamily: '"Playfair Display", serif',
-    color: '#1e293b',
-  },
-  profile: {
-    textAlign: 'center',
-    fontSize: '1.1rem',
-    lineHeight: '1.8',
-    color: '#475569',
-    maxWidth: '800px',
-    margin: '0 auto',
-  },
-
-  // Форма
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-    maxWidth: '500px',
-    margin: '0 auto',
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-  },
-  label: {
-    fontSize: '0.95rem',
-    color: '#334155',
-    fontWeight: '500',
   },
   input: {
-    padding: '0.875rem',
-    border: '2px solid #e2e8f0',
-    borderRadius: '12px',
+    display: 'block',
+    width: '100%',
+    padding: '0.75rem',
+    margin: '0.5rem 0',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
     fontSize: '1rem',
   },
   button: {
+    padding: '0.75rem 1.5rem',
     backgroundColor: '#4f46e5',
     color: 'white',
-    padding: '0.85rem 2.5rem',
-    borderRadius: '12px',
     border: 'none',
-    fontWeight: '600',
-    fontSize: '1.1rem',
+    borderRadius: '8px',
     cursor: 'pointer',
+    fontSize: '1rem',
     marginTop: '1rem',
-    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
   },
-  cancelBtn: {
-    padding: '0.85rem 1.5rem',
-    backgroundColor: '#f8fafc',
-    color: '#4f46e5',
-    border: '2px solid #4f46e5',
-    borderRadius: '12px',
-    cursor: 'pointer',
-  },
-  confirmBtn: {
-    padding: '0.85rem 1.5rem',
-    backgroundColor: '#4f46e5',
-    color: 'white',
-    border: 'none',
-    borderRadius: '12px',
-    cursor: 'pointer',
-  },
-  buttonGroup: {
-    display: 'flex',
-    gap: '1rem',
-    justifyContent: 'center',
-    marginTop: '1.5rem',
-  },
-  error: {
-    color: '#e53e3e',
-    textAlign: 'center',
-    marginTop: '0.5rem',
-  },
-  empty: {
-    color: '#64748b',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    padding: '1.5rem',
-  },
-
-  // Редактирование
-  editForm: {
-    padding: '1.5rem',
-    border: '1px solid #e2e8f0',
-    borderRadius: '12px',
-    backgroundColor: '#f8fafc',
-  },
-  editTitle: {
-    margin: '0 0 1rem 0',
-    fontSize: '1.25rem',
-    color: '#1e293b',
-    fontWeight: '600',
-  },
-
-  // Записи
-  appointments: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.5rem',
-    maxWidth: '800px',
-    margin: '0 auto',
-  },
-  appointmentCard: {
-    backgroundColor: 'white',
+  success: {
     padding: '2rem',
-    borderRadius: '16px',
-    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-    border: '1px solid #e2e8f0',
+    textAlign: 'center',
+    backgroundColor: '#f0fdf4',
+    border: '1px solid #bbf7d0',
+    borderRadius: '8px',
   },
-  appointmentHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '1rem',
-  },
-  cardTitle: {
-    fontSize: '1.3rem',
-    color: '#1e293b',
-    margin: '0 0 0.5rem 0',
-  },
-  cardText: {
-    color: '#64748b',
-    margin: '0',
-  },
-  iconButton: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: '#4f46e5',
-    cursor: 'pointer',
-    padding: '0.5rem',
-    fontSize: '1.1rem',
-  },
-
-  // Статусы
-  status: {
-    padding: '0.4rem 0.8rem',
-    borderRadius: '999px',
-    fontSize: '0.9rem',
-    fontWeight: '500',
-    display: 'inline-block',
-  },
-  'Подтверждена': { backgroundColor: '#dcfce7', color: '#166534' },
-  'Завершена': { backgroundColor: '#dbeafe', color: '#1e40af' },
-  'Ожидание': { backgroundColor: '#fef9c3', color: '#854d0e' },
-  'Отменена': { backgroundColor: '#fee2e2', color: '#991b1b' },
-
-  // Отзывы
-  reviews: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.5rem',
-    maxWidth: '800px',
-    margin: '0 auto',
-  },
-  reviewCard: {
-    backgroundColor: 'white',
-    padding: '1.5rem',
-    borderRadius: '12px',
-    border: '1px solid #e2e8f0',
-  },
-  reviewHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '0.75rem',
-  },
-  reviewStars: {
-    display: 'flex',
-    gap: '4px',
-  },
-  reviewText: {
-    color: '#475569',
-    lineHeight: '1.7',
-    marginBottom: '0.5rem',
-  },
-  reviewDate: {
-    color: '#64748b',
-    fontSize: '0.9rem',
-  },
-
-  // Связь
-  contactButtons: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '1.5rem',
-    flexWrap: 'wrap',
-    marginTop: '1.5rem',
-  },
-  contactBtn: {
-    backgroundColor: '#4f46e5',
-    color: 'white',
-    padding: '0.85rem 2rem',
-    borderRadius: '12px',
-    textDecoration: 'none',
-    fontWeight: '600',
-    fontSize: '1.1rem',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
-  },
-
-  // Уведомление
   notification: {
     position: 'fixed',
     top: '20px',
     right: '20px',
-    backgroundColor: '#dc2626',
-    color: 'white',
-    padding: '12px 20px',
+    maxWidth: '350px',
+    padding: '1rem',
     borderRadius: '12px',
     fontSize: '1rem',
     fontWeight: '500',
+    color: '#991b1b',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
     zIndex: 1000,
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  closeNotif: {
+    background: 'none',
+    border: 'none',
+    fontSize: '1.2rem',
+    cursor: 'pointer',
+    marginLeft: '1rem',
+  },
+
+  // --- ЧАТ ---
+  chatButton: {
+    position: 'fixed',
+    bottom: '20px',
+    right: '20px',
+    width: '60px',
+    height: '60px',
+    borderRadius: '50%',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    border: 'none',
+    fontSize: '24px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)',
+    zIndex: 1000,
+  },
+  chatModal: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  chatContainer: {
+    width: '90%',
+    maxWidth: '500px',
+    maxHeight: '70vh',
+    backgroundColor: 'white',
+    borderRadius: '16px',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  chatHeader: {
+    padding: '1rem 1.5rem',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    fontWeight: '600',
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '1.5rem',
+    cursor: 'pointer',
+  },
+  onlineStatus: {
+    fontSize: '0.85rem',
+    marginLeft: '0.5rem',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  dot: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    display: 'inline-block',
+    marginRight: '8px',
+  },
+  chatBox: {
+    flex: 1,
+    padding: '1rem',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.75rem',
+    backgroundColor: '#f9fafb',
+  },
+  emptyChat: {
+    textAlign: 'center',
+    color: '#64748b',
+    fontStyle: 'italic',
+    marginTop: '2rem',
+  },
+  chatMessage: {
+    display: 'flex',
+    flexDirection: 'column',
+    margin: '0 1rem',
+  },
+  msgBubble: {
+    display: 'inline-block',
+    maxWidth: '80%',
+    padding: '0.75rem 1rem',
+    borderRadius: '18px',
+    marginBottom: '0.25rem',
+  },
+  msgText: {
+    margin: '0 0 0.25rem 0',
+    lineHeight: '1.5',
+  },
+  msgTime: {
+    fontSize: '0.75rem',
+    color: '#94a3b8',
+    textAlign: 'right',
+  },
+  clientMsg: {},
+  'clientMsg > div': {
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    borderTopRightRadius: '4px',
+  },
+  adminMsg: {},
+  'adminMsg > div': {
+    backgroundColor: '#f1f5f9',
+    color: '#1e293b',
+    borderTopLeftRadius: '4px',
+  },
+  systemMessage: {
+    textAlign: 'center',
+    margin: '1rem 0',
+    fontSize: '0.8rem',
+    color: '#64748b',
+    fontStyle: 'italic',
+  },
+  typingIndicator: {
+    textAlign: 'left',
+    marginLeft: '1.5rem',
+    fontSize: '0.9rem',
+    color: '#64748b',
+    fontStyle: 'italic',
+    marginTop: '0.25rem',
+  },
+  chatInputContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '1rem',
+    gap: '0.5rem',
+    backgroundColor: 'white',
+    borderTop: '1px solid #e2e8f0',
+  },
+  formatHint: {
+    fontSize: '0.8rem',
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    marginLeft: '0.5rem',
+  },
+  chatInput: {
+    flex: 1,
+    padding: '0.75rem 1rem',
+    border: '2px solid #e2e8f0',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    outline: 'none',
+  },
+  emojiButton: {
+    position: 'absolute',
+    right: '50px',
+    bottom: '16px',
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    backgroundColor: '#f1f5f9',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    border: 'none',
+    fontSize: '1.2rem',
+  },
+  emojiPicker: {
+    position: 'absolute',
+    bottom: '60px',
+    right: '1rem',
+    backgroundColor: 'white',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    padding: '0.75rem',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '0.5rem',
+    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+    zIndex: 1000,
+  },
+  emojiItem: {
+    fontSize: '1.5rem',
+    cursor: 'pointer',
+    padding: '0.25rem',
+    borderRadius: '8px',
+  },
+  'emojiItem:hover': {
+    backgroundColor: '#e2e8f0',
+  },
+  sendButton: {
+    padding: '0.75rem 1.25rem',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    fontWeight: '500',
+    cursor: 'pointer',
+  },
+  clearChatButton: {
+    padding: '0.5rem',
+    backgroundColor: '#f87171',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '0.9rem',
+    cursor: 'pointer',
+  },
+
+  // --- СВЯЗЬ ---
+  contactButtons: {
+    display: 'flex',
+    gap: '1rem',
+    flexWrap: 'wrap',
+    marginTop: '2rem',
+  },
+  contactBtn: {
+    flex: 1,
+    padding: '0.875rem',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    textDecoration: 'none',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    fontWeight: '500',
   },
 };
-
-// Анимации
-const styleEl = document.createElement('style');
-styleEl.textContent = `
-  .button, .contact-btn, .cancel-btn, .confirm-btn, .hero-button, .cta-button {
-    transition: all 0.2s ease;
-  }
-  .button:hover, .contact-btn:hover, .cancel-btn:hover, .confirm-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 15px rgba(79, 70, 229, 0.35);
-  }
-  @media (max-width: 768px) {
-    .hero-title { font-size: 2.5rem; }
-    .hero-text { font-size: 1.1rem; }
-    .title { font-size: 2.2rem; }
-  }
-`;
-document.head.appendChild(styleEl);
