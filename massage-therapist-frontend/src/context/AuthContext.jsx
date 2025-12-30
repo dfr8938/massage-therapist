@@ -12,25 +12,47 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('currentUser');
+    return saved ? JSON.parse(saved) : null;
+  });
 
+  // 🔐 Синхронный вход — без fetch, без db.json
   const login = (email, password) => {
-    return fetch('/db.json')
-      .then(res => res.json())
-      .then(data => {
-        const user = data.users.find(u => u.email === email && u.password === password);
-        if (user) {
-          const userData = { id: user.id, email: user.email, role: user.role };
-          setCurrentUser(userData);
-          return { success: true };
-        } else {
-          return { success: false, error: 'Неверный email или пароль' };
+    return new Promise((resolve) => {
+      // Встроенные пользователи
+      const users = [
+        {
+          id: 1,
+          email: 'admin@spa.ru',
+          password: 'admin123',
+          role: 'admin'
+        },
+        {
+          id: 2,
+          email: 'client@spa.ru',
+          password: 'password123',
+          role: 'client'
         }
-      });
+      ];
+
+      const user = users.find(u => u.email === email && u.password === password);
+
+      if (user) {
+        const userData = { id: user.id, email: user.email, role: user.role };
+        setCurrentUser(userData);
+        localStorage.setItem('currentUser', JSON.stringify(userData));
+        resolve({ success: true });
+      } else {
+        resolve({ success: false, error: 'Неверный email или пароль' });
+      }
+    });
   };
 
+  // 🚪 Выход
   const logout = () => {
     setCurrentUser(null);
+    localStorage.removeItem('currentUser');
   };
 
   const value = {
@@ -39,9 +61,5 @@ export function AuthProvider({ children }) {
     logout,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

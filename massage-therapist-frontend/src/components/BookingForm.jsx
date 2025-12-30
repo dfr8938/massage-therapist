@@ -1,215 +1,271 @@
 // src/components/BookingForm.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function BookingForm() {
+  const [services, setServices] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    service: '',
+    serviceId: '',
     date: '',
     time: '',
+    name: '',
+    phone: '',
   });
 
+  const [step, setStep] = useState('form'); // 'form' | 'confirm' | 'success'
   const [error, setError] = useState('');
 
-  // Форматирование телефона: +7 (XXX) XXX-XX-XX
-  const formatPhone = (value) => {
-    const digits = value.replace(/\D/g, '');
-    if (digits.length === 0) return '';
-    let number = digits;
-    if (number[0] === '8' && number.length > 1) number = number.substring(1);
-    if (number[0] === '7' && number.length > 1) number = number.substring(1);
-    number = number.slice(0, 10);
-    if (number.length < 3) return `+7 (${number}`;
-    if (number.length < 6) return `+7 (${number.slice(0, 3)}) ${number.slice(3)}`;
-    if (number.length < 9) return `+7 (${number.slice(0, 3)}) ${number.slice(3, 6)}-${number.slice(6)}`;
-    return `+7 (${number.slice(0, 3)}) ${number.slice(3, 6)}-${number.slice(6, 8)}-${number.slice(8)}`;
-  };
-
-  const handlePhoneChange = (e) => {
-    const raw = e.target.value;
-    const formatted = formatPhone(raw);
-    setFormData({ ...formData, phone: formatted });
-  };
+  useEffect(() => {
+    // Загружаем услуги и записи из db.json
+    fetch('/db.json')
+      .then(res => res.json())
+      .then(data => {
+        setServices(data.services || []);
+        setAppointments(data.appointments || []);
+      })
+      .catch(err => {
+        console.error('Ошибка загрузки данных:', err);
+        setError('Не удалось загрузить услуги');
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name !== 'phone') {
-      setFormData({ ...formData, [name]: value });
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const validate = () => {
+    if (!formData.serviceId || !formData.date || !formData.time || !formData.name.trim() || !formData.phone) {
+      setError('Заполните все поля');
+      return false;
     }
+    setError('');
+    return true;
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-
-    // Валидация
-    if (!formData.name.trim()) {
-      setError('Введите имя');
-      return;
-    }
-
-    const phoneDigits = formData.phone.replace(/\D/g, '').replace(/^7/, '');
-    if (phoneDigits.length !== 10) {
-      setError('Введите корректный телефон');
-      return;
-    }
-
-    if (!formData.service) {
-      setError('Выберите услугу');
-      return;
-    }
-
-    const selectedDate = new Date(formData.date);
-    const dayOfWeek = selectedDate.getDay(); // 0 – вс, 1 – пн, ..., 6 – сб
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      setError('Запись доступна только в будние дни (пн–пт)');
-      return;
-    }
-
-    if (!formData.time) {
-      setError('Выберите время');
-      return;
-    }
-
-    setError('');
-    alert(`Запись оформлена!\nУслуга: ${formData.service}\nДата: ${formData.date} в ${formData.time}\nИмя: ${formData.name}\nТелефон: ${formData.phone}`);
+    if (!validate()) return;
+    setStep('confirm');
   };
 
-  // Генерация времени с шагом 30 минут (с 9:00 до 20:00)
-  const timeOptions = [];
-  for (let hour = 9; hour <= 19; hour++) {
-    timeOptions.push(`${hour.toString().padStart(2, '0')}:00`);
-    timeOptions.push(`${hour.toString().padStart(2, '0')}:30`);
-  }
-  timeOptions.push('20:00');
+  const confirmBooking = () => {
+    // Здесь можно отправить на сервер
+    // Пока — просто показываем успех
+    setStep('success');
+  };
+
+  const resetForm = () => {
+    setFormData({
+      serviceId: '',
+      date: '',
+      time: '',
+      name: '',
+      phone: '',
+    });
+    setStep('form');
+    setError('');
+  };
+
+  if (loading) return <div>Загрузка услуг...</div>;
+  if (error) return <div style={styles.error}>{error}</div>;
 
   return (
     <div style={styles.container}>
-      <h3 style={styles.title}>Записаться на приём</h3>
+      <h2 style={styles.title}>Записаться на приём</h2>
 
-      {error && <p style={styles.error}>{error}</p>}
+      {step === 'form' && (
+        <form onSubmit={handleSubmit} style={styles.form}>
+          <div style={styles.group}>
+            <label style={styles.label}>Услуга</label>
+            <select
+              name="serviceId"
+              value={formData.serviceId}
+              onChange={handleChange}
+              style={styles.input}
+            >
+              <option value="">Выберите услугу</option>
+              {services.map(service => (
+                <option key={service.id} value={service.id}>
+                  {service.name} — {service.price} ₽ ({service.duration} мин)
+                </option>
+              ))}
+            </select>
+          </div>
 
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <input
-          name="name"
-          placeholder="Иван Иванов"
-          required
-          value={formData.name}
-          onChange={handleChange}
-          style={styles.input}
-        />
+          <div style={styles.group}>
+            <label style={styles.label}>Дата</label>
+            <input
+              type="date"
+              name="date"
+              value={formData.date}
+              onChange={handleChange}
+              min={new Date().toISOString().split('T')[0]}
+              style={styles.input}
+            />
+          </div>
 
-        <input
-          name="phone"
-          placeholder="+7 (999) 999-99-99"
-          required
-          value={formData.phone}
-          onChange={handlePhoneChange}
-          style={styles.input}
-        />
+          <div style={styles.group}>
+            <label style={styles.label}>Время</label>
+            <input
+              type="time"
+              name="time"
+              value={formData.time}
+              onChange={handleChange}
+              style={styles.input}
+            />
+          </div>
 
-        <select
-          name="service"
-          value={formData.service}
-          onChange={handleChange}
-          required
-          style={styles.input}
-        >
-          <option value="">Выберите услугу</option>
-          <option value="Классический массаж">Классический массаж</option>
-          <option value="Спортивный массаж">Спортивный массаж</option>
-          <option value="Антицеллюлитный массаж">Антицеллюлитный массаж</option>
-          <option value="Релакс-массаж">Релакс-массаж</option>
-        </select>
+          <div style={styles.group}>
+            <label style={styles.label}>Ваше имя</label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              placeholder="Анна"
+              style={styles.input}
+            />
+          </div>
 
-        <input
-          type="date"
-          name="date"
-          required
-          value={formData.date}
-          onChange={handleChange}
-          min={new Date().toISOString().split('T')[0]}
-          style={styles.input}
-        />
+          <div style={styles.group}>
+            <label style={styles.label}>Телефон</label>
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              placeholder="+7 (999) 999-99-99"
+              style={styles.input}
+            />
+          </div>
 
-        <select
-          name="time"
-          value={formData.time}
-          onChange={handleChange}
-          required
-          style={styles.input}
-        >
-          <option value="">Выберите время</option>
-          {timeOptions.map((time) => (
-            <option key={time} value={time}>
-              {time}
-            </option>
-          ))}
-        </select>
+          {error && <p style={styles.error}>{error}</p>}
 
-        <button type="submit" style={styles.button}>
-          Записаться
-        </button>
-      </form>
+          <button type="submit" style={styles.button}>
+            Далее
+          </button>
+        </form>
+      )}
+
+      {step === 'confirm' && (
+        <div style={styles.confirm}>
+          <h3 style={styles.confirmTitle}>Подтвердите запись</h3>
+          <p><strong>Услуга:</strong> {services.find(s => s.id == formData.serviceId)?.name}</p>
+          <p><strong>Дата:</strong> {formData.date}, {formData.time}</p>
+          <p><strong>Имя:</strong> {formData.name}</p>
+          <p><strong>Телефон:</strong> {formData.phone}</p>
+          <div style={styles.confirmButtons}>
+            <button onClick={() => setStep('form')} style={styles.cancelBtn}>Назад</button>
+            <button onClick={confirmBooking} style={styles.confirmBtn}>Подтвердить</button>
+          </div>
+        </div>
+      )}
+
+      {step === 'success' && (
+        <div style={styles.success}>
+          <h3>✅ Заявка отправлена!</h3>
+          <p>Скоро мастер свяжется с вами для подтверждения.</p>
+          <button onClick={resetForm} style={styles.button}>Записаться снова</button>
+        </div>
+      )}
     </div>
   );
 }
 
 const styles = {
   container: {
-    backgroundColor: '#f0fff4',
-    padding: '1.5rem',
-    borderRadius: '12px',
-    border: '1px solid #c6f6d5',
-    maxWidth: '500px',
+    backgroundColor: 'white',
+    padding: '2rem',
+    borderRadius: '16px',
+    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+    maxWidth: '600px',
     margin: '2rem auto',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
+    fontFamily: 'Inter, sans-serif',
   },
   title: {
-    fontSize: '1.3rem',
-    fontWeight: '600',
-    color: '#2f855a',
+    fontSize: '1.75rem',
+    color: '#1e3a8a',
     textAlign: 'center',
-    marginBottom: '1rem',
-  },
-  error: {
-    backgroundColor: '#fee2e2',
-    color: '#b91c1c',
-    padding: '0.5rem',
-    borderRadius: '6px',
-    fontSize: '0.9rem',
-    marginBottom: '1rem',
-    textAlign: 'center',
+    marginBottom: '1.5rem',
+    fontFamily: '"Playfair Display", serif',
   },
   form: {
     display: 'flex',
     flexDirection: 'column',
+    gap: '1rem',
+  },
+  group: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem',
+  },
+  label: {
+    fontSize: '0.95rem',
+    color: '#334155',
+    fontWeight: '500',
   },
   input: {
-    padding: '0.75rem',
-    marginBottom: '0.75rem',
-    border: '1px solid #a2fca2',
-    borderRadius: '6px',
+    padding: '0.875rem',
+    border: '2px solid #e2e8f0',
+    borderRadius: '12px',
     fontSize: '1rem',
-    transition: 'border 0.2s',
-  },
-  inputFocus: {
-    border: '1px solid #48bb78',
-    outline: 'none',
   },
   button: {
-    backgroundColor: '#48bb78',
+    padding: '0.95rem',
+    backgroundColor: '#4f46e5',
     color: 'white',
     border: 'none',
-    padding: '0.75rem',
-    borderRadius: '6px',
+    borderRadius: '12px',
+    fontSize: '1.05rem',
+    fontWeight: '600',
     cursor: 'pointer',
-    fontSize: '1rem',
-    fontWeight: '500',
+    marginTop: '1rem',
+  },
+  error: {
+    color: '#e53e3e',
+    fontSize: '0.95rem',
+    textAlign: 'center',
     marginTop: '0.5rem',
   },
-  buttonHover: {
-    backgroundColor: '#38a169',
+  confirm: {
+    textAlign: 'center',
+    padding: '1rem',
+  },
+  confirmTitle: {
+    fontSize: '1.5rem',
+    color: '#1e293b',
+    marginBottom: '1.5rem',
+  },
+  confirmButtons: {
+    display: 'flex',
+    gap: '1rem',
+    justifyContent: 'center',
+    marginTop: '2rem',
+  },
+  cancelBtn: {
+    padding: '0.75rem 1.5rem',
+    backgroundColor: '#f8fafc',
+    color: '#4f46e5',
+    border: '2px solid #4f46e5',
+    borderRadius: '12px',
+    cursor: 'pointer',
+  },
+  confirmBtn: {
+    padding: '0.75rem 1.5rem',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+  },
+  success: {
+    textAlign: 'center',
+    padding: '2rem 1rem',
+    fontSize: '1.1rem',
+    color: '#1e293b',
   },
 };
