@@ -1,29 +1,8 @@
-// src/pages/ClientDashboard.jsx — Полная mock-версия (без API)
+// src/pages/ClientDashboard.jsx
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { FaUser, FaCalendarAlt, FaComment, FaWhatsapp, FaTelegram, FaEnvelope, FaStar, FaEdit, FaCheck } from 'react-icons/fa';
-
-// 🔹 МОК-ДАННЫЕ
-const MOCK_CLIENT = {
-  id: 1,
-  name: 'Анна Петрова',
-  phone: '+7 (915) 100-20-30',
-  visit_count: 7,
-  last_visit: '2025-04-05',
-  favorite_service: 'Релакс-массаж'
-};
-
-const MOCK_APPOINTMENTS = [
-  { id: 1, service_name: 'Релакс-массаж', date: '2025-04-05', time: '14:00', status: 'Подтверждена' },
-  { id: 2, service_name: 'Массаж шеи и плеч', date: '2025-04-09', time: '13:00', status: 'Ожидание' },
-  { id: 3, service_name: 'Спортивный массаж', date: '2025-03-28', time: '10:00', status: 'Завершена' },
-];
-
-const MOCK_REVIEWS = [
-  { id: 1, rating: 5, text: 'Великолепный сеанс! Очень расслабилась.', created_at: '2025-03-28T10:00:00Z' },
-  { id: 2, rating: 4, text: 'Хороший массаж, но чуть сильнее — было бы идеально.', created_at: '2025-02-15T16:30:00Z' },
-];
+import { useState, useEffect } from 'react';
 
 export default function ClientDashboard() {
   const { currentUser } = useAuth();
@@ -35,68 +14,66 @@ export default function ClientDashboard() {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Форма отзыва
   const [review, setReview] = useState({ text: '', rating: 5 });
   const [isEditing, setIsEditing] = useState(false);
   const [editingReviewId, setEditingReviewId] = useState(null);
 
-  // Редактирование профиля
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({});
 
-  // 🔹 Имитация загрузки данных
   useEffect(() => {
-    const loadMockData = () => {
-      setTimeout(() => {
-        setClient(MOCK_CLIENT);
-        setAppointments(MOCK_APPOINTMENTS);
-        setReviews(MOCK_REVIEWS);
+    if (!currentUser) {
+      navigate('/login');
+      return;
+    }
 
-        const [firstName, lastName] = MOCK_CLIENT.name?.split(' ') || ['', ''];
-        setProfileForm({
-          firstName,
-          lastName,
-          phone: MOCK_CLIENT.phone,
-        });
+    fetch('/db.json')
+      .then(res => res.json())
+      .then(data => {
+        const clientData = data.clients.find(c => c.user_id === currentUser.id);
+        const clientAppointments = data.appointments
+          .filter(a => a.client_id === currentUser.id)
+          .map(a => ({
+            ...a,
+            service_name: data.services.find(s => s.id === a.service_id)?.name || 'Услуга'
+          }));
+        const clientReviews = data.reviews
+          .filter(r => r.client_id === currentUser.id)
+          .map(r => ({
+            ...r,
+            service_name: data.services.find(s => s.id === r.service_id)?.name || 'Услуга'
+          }));
 
-        setLoading(false);
-      }, 600);
-    };
+        setClient(clientData);
+        setAppointments(clientAppointments);
+        setReviews(clientReviews);
 
-    loadMockData();
-  }, []);
+        const [firstName, lastName] = clientData?.name?.split(' ') || ['', ''];
+        setProfileForm({ firstName, lastName });
+      })
+      .finally(() => setLoading(false));
+  }, [currentUser, navigate]);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
-  if (loading) {
-    return <div style={styles.loading}>Загрузка...</div>;
-  }
+  if (loading) return <div style={styles.loading}>Загрузка...</div>;
+  if (!client) return <div style={styles.error}>Не удалось загрузить данные</div>;
 
-  if (!client) {
-    return <div style={styles.error}>Не удалось загрузить данные</div>;
-  }
-
-  // 🔹 Отправка отзыва
   const handleSubmitReview = () => {
     if (!review.text.trim()) return;
-
     const newReview = {
-      id: editingReviewId || Date.now(),
-      ...review,
-      created_at: new Date().toISOString(),
+      id: Date.now(),
+      client_id: currentUser.id,
+      service_id: 1,
+      rating: review.rating,
+      text: review.text,
+      created_at: new Date().toISOString()
     };
-
-    if (editingReviewId) {
-      setReviews(reviews.map(r => r.id === editingReviewId ? newReview : r));
-    } else {
-      setReviews([newReview, ...reviews]);
-    }
-
+    setReviews([newReview, ...reviews]);
     setReview({ text: '', rating: 5 });
     setIsEditing(false);
-    setEditingReviewId(null);
   };
 
   const handleEditReview = (rev) => {
@@ -111,93 +88,50 @@ export default function ClientDashboard() {
     setIsEditing(false);
   };
 
-  // 🔹 Редактирование профиля
   const handleSaveProfile = () => {
-    if (!profileForm.firstName.trim()) {
-      alert('Имя обязательно');
-      return;
-    }
-
-    const updatedName = `${profileForm.firstName.trim()} ${profileForm.lastName?.trim()}`.trim() || profileForm.firstName.trim();
-    setClient({ ...client, name: updatedName });
+    const name = `${profileForm.firstName.trim()} ${profileForm.lastName?.trim()}`.trim();
+    setClient({ ...client, name });
     setIsEditingProfile(false);
   };
 
-  // 🔹 Рейтинг (звёзды)
-  const renderStars = (value, onChange) => {
-    return (
-      <div style={styles.stars}>
-        {[1, 2, 3, 4, 5].map(star => (
-          <FaStar
-            key={star}
-            size={18}
-            style={{ cursor: 'pointer', color: star <= value ? '#fbbf24' : '#d1d5db' }}
-            onClick={() => onChange(star)}
-          />
-        ))}
-      </div>
-    );
-  };
+  const renderStars = (value, onChange) => (
+    <div style={styles.stars}>
+      {[1, 2, 3, 4, 5].map(star => (
+        <FaStar
+          key={star}
+          size={18}
+          style={{ cursor: 'pointer', color: star <= value ? '#fbbf24' : '#d1d5db' }}
+          onClick={() => onChange(star)}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div style={styles.container}>
-      {/* Hero Section */}
-      <section
-        style={{
-          ...styles.hero,
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0)' : 'translateY(-20px)',
-          transition: 'opacity 0.8s ease, transform 0.8s ease',
-        }}
-      >
+      <section style={{ ...styles.hero, opacity: isVisible ? 1 : 0, transform: isVisible ? 'translateY(0)' : 'translateY(-20px)', transition: 'opacity 0.8s ease, transform 0.8s ease' }}>
         <h1 style={styles.heroTitle}>Личный кабинет</h1>
         <p style={styles.heroText}>
-          Добро пожаловать, {client.name?.split(' ')[0] || client.name}! Здесь вы можете управлять профилем, записями и отзывами.
+          Добро пожаловать, {client.name?.split(' ')[0]}! Здесь вы управляете профилем, записями и отзывами.
         </p>
       </section>
 
       <div style={styles.content}>
-        {/* Профиль */}
-        <section
-          style={{
-            ...styles.section,
-            opacity: isVisible ? 1 : 0,
-            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-            transition: 'opacity 0.8s ease 0.2s, transform 0.8s ease 0.2s',
-          }}
-        >
-          <h2 style={styles.sectionTitle}>
-            <FaUser style={styles.icon} /> Личные данные
-          </h2>
+        <section style={{ ...styles.section, opacity: isVisible ? 1 : 0, transform: isVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'opacity 0.8s ease 0.2s, transform 0.8s ease 0.2s' }}>
+          <h2 style={styles.sectionTitle}><FaUser style={styles.icon} /> Личные данные</h2>
           {isEditingProfile ? (
             <div style={styles.form}>
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Имя</label>
-                <input
-                  value={profileForm.firstName}
-                  onChange={e => setProfileForm({ ...profileForm, firstName: e.target.value })}
-                  style={styles.input}
-                />
+                <input value={profileForm.firstName} onChange={e => setProfileForm({ ...profileForm, firstName: e.target.value })} style={styles.input} />
               </div>
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Фамилия</label>
-                <input
-                  value={profileForm.lastName}
-                  onChange={e => setProfileForm({ ...profileForm, lastName: e.target.value })}
-                  style={styles.input}
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Телефон</label>
-                <input value={client.phone} disabled style={styles.input} />
+                <input value={profileForm.lastName} onChange={e => setProfileForm({ ...profileForm, lastName: e.target.value })} style={styles.input} />
               </div>
               <div style={styles.buttonGroup}>
-                <button onClick={() => setIsEditingProfile(false)} style={styles.cancelBtn}>
-                  Отмена
-                </button>
-                <button onClick={handleSaveProfile} style={styles.saveBtn}>
-                  Сохранить
-                </button>
+                <button onClick={() => setIsEditingProfile(false)} style={styles.cancelBtn}>Отмена</button>
+                <button onClick={handleSaveProfile} style={styles.saveBtn}>Сохранить</button>
               </div>
             </div>
           ) : (
@@ -214,18 +148,8 @@ export default function ClientDashboard() {
           )}
         </section>
 
-        {/* Записи */}
-        <section
-          style={{
-            ...styles.section,
-            opacity: isVisible ? 1 : 0,
-            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-            transition: 'opacity 0.8s ease 0.3s, transform 0.8s ease 0.3s',
-          }}
-        >
-          <h2 style={styles.sectionTitle}>
-            <FaCalendarAlt style={styles.icon} /> Мои записи
-          </h2>
+        <section style={{ ...styles.section, opacity: isVisible ? 1 : 0, transform: isVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'opacity 0.8s ease 0.3s, transform 0.8s ease 0.3s' }}>
+          <h2 style={styles.sectionTitle}><FaCalendarAlt style={styles.icon} /> Мои записи</h2>
           {appointments.length === 0 ? (
             <p style={styles.empty}>У вас пока нет записей</p>
           ) : (
@@ -233,80 +157,46 @@ export default function ClientDashboard() {
               {appointments.map(app => (
                 <div key={app.id} style={styles.appointmentCard}>
                   <h4 style={styles.cardTitle}>{app.service_name}</h4>
-                  <p style={styles.cardText}>
-                    {new Date(app.date).toLocaleDateString('ru-RU')}, {app.time}
-                  </p>
-                  <span style={{ ...styles.status, ...styles.status[app.status] }}>
-                    {app.status}
-                  </span>
+                  <p style={styles.cardText}>{new Date(app.date).toLocaleDateString('ru-RU')}, {app.time}</p>
+                  <span style={{ ...styles.status, ...styles.status[app.status] }}>{app.status}</span>
                 </div>
               ))}
             </div>
           )}
         </section>
 
-        {/* Отзывы */}
-        <section
-          style={{
-            ...styles.section,
-            opacity: isVisible ? 1 : 0,
-            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-            transition: 'opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s',
-          }}
-        >
-          <h2 style={styles.sectionTitle}>
-            <FaComment style={styles.icon} /> Мои отзывы
-          </h2>
-
+        <section style={{ ...styles.section, opacity: isVisible ? 1 : 0, transform: isVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s' }}>
+          <h2 style={styles.sectionTitle}><FaComment style={styles.icon} /> Мои отзывы</h2>
           {!isEditing && (
             <div style={styles.reviewForm}>
               {renderStars(review.rating, setReview)}
-              <textarea
-                value={review.text}
-                onChange={e => setReview({ ...review, text: e.target.value })}
-                placeholder="Поделитесь впечатлениями о сеансе..."
-                style={styles.textarea}
-              />
-              <button onClick={handleSubmitReview} style={styles.submitBtn}>
-                <FaCheck style={{ marginRight: '8px' }} /> Отправить отзыв
-              </button>
+              <textarea value={review.text} onChange={e => setReview({ ...review, text: e.target.value })} placeholder="Поделитесь впечатлениями о сеансе..." style={styles.textarea} />
+              <button onClick={handleSubmitReview} style={styles.submitBtn}><FaCheck style={{ marginRight: '8px' }} /> Отправить отзыв</button>
             </div>
           )}
-
           {isEditing && (
             <div style={styles.editReview}>
               <h4 style={styles.editTitle}>Редактировать отзыв</h4>
               {renderStars(review.rating, setReview)}
-              <textarea
-                value={review.text}
-                onChange={e => setReview({ ...review, text: e.target.value })}
-                style={styles.textarea}
-              />
+              <textarea value={review.text} onChange={e => setReview({ ...review, text: e.target.value })} style={styles.textarea} />
               <div style={styles.buttonGroup}>
                 <button onClick={handleCancelEdit} style={styles.cancelBtn}>Отмена</button>
                 <button onClick={handleSubmitReview} style={styles.saveBtn}>Обновить</button>
               </div>
             </div>
           )}
-
           {reviews.length > 0 ? (
             <div style={styles.reviews}>
               {reviews.map(r => (
                 <div key={r.id} style={styles.reviewCard}>
                   <div style={styles.reviewHeader}>
                     <div style={styles.reviewStars}>
-                      {Array.from({ length: r.rating }).map((_, i) => (
-                        <FaStar key={i} size={14} color="#fbbf24" />
-                      ))}
+                      {Array.from({ length: r.rating }).map((_, i) => <FaStar key={i} size={14} color="#fbbf24" />)}
                     </div>
-                    <small style={styles.reviewDate}>
-                      {new Date(r.created_at).toLocaleDateString('ru-RU')}
-                    </small>
+                    <small style={styles.reviewDate}>{new Date(r.created_at).toLocaleDateString('ru-RU')}</small>
                   </div>
                   <p style={styles.reviewText}>{r.text}</p>
-                  <button onClick={() => handleEditReview(r)} style={styles.smallEditBtn}>
-                    <FaEdit size={12} /> Ред.
-                  </button>
+                  <button onClick={() => handleEditReview(r)} style={styles.smallEditBtn}><FaEdit size={12} /> Ред.</button>
                 </div>
               ))}
             </div>
@@ -315,44 +205,17 @@ export default function ClientDashboard() {
           )}
         </section>
 
-        {/* Связаться */}
-        <section
-          style={{
-            ...styles.section,
-            opacity: isVisible ? 1 : 0,
-            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-            transition: 'opacity 0.8s ease 0.5s, transform 0.8s ease 0.5s',
-          }}
-        >
-          <h2 style={styles.sectionTitle}>
-            <FaComment style={styles.icon} /> Связаться с мастером
-          </h2>
+        <section style={{ ...styles.section, opacity: isVisible ? 1 : 0, transform: isVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'opacity 0.8s ease 0.5s, transform 0.8s ease 0.5s' }}>
+          <h2 style={styles.sectionTitle}><FaComment style={styles.icon} /> Связаться с мастером</h2>
           <div style={styles.contactButtons}>
-            <a href="https://wa.me/79255616201" target="_blank" rel="noreferrer" style={styles.contactBtn}>
-              <FaWhatsapp /> WhatsApp
-            </a>
-            <a href="https://t.me/katya_massage" target="_blank" rel="noreferrer" style={styles.contactBtn}>
-              <FaTelegram /> Telegram
-            </a>
-            <a href="mailto:gorelovaee01@gmail.com" style={styles.contactBtn}>
-              <FaEnvelope /> Email
-            </a>
+            <a href="https://wa.me/79255616201" target="_blank" rel="noreferrer" style={styles.contactBtn}><FaWhatsapp /> WhatsApp</a>
+            <a href="https://t.me/katya_massage" target="_blank" rel="noreferrer" style={styles.contactBtn}><FaTelegram /> Telegram</a>
+            <a href="mailto:gorelovaee01@gmail.com" style={styles.contactBtn}><FaEnvelope /> Email</a>
           </div>
         </section>
 
-        {/* Назад */}
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '3rem 1rem',
-            opacity: isVisible ? 1 : 0,
-            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
-            transition: 'opacity 0.8s ease 0.6s, transform 0.8s ease 0.6s',
-          }}
-        >
-          <button onClick={() => navigate(-1)} style={styles.backBtn}>
-            ← Назад
-          </button>
+        <div style={{ textAlign: 'center', padding: '3rem 1rem', opacity: isVisible ? 1 : 0, transform: isVisible ? 'translateY(0)' : 'translateY(30px)', transition: 'opacity 0.8s ease 0.6s, transform 0.8s ease 0.6s' }}>
+          <button onClick={() => navigate(-1)} style={styles.backBtn}>← Назад</button>
         </div>
       </div>
     </div>

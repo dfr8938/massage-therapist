@@ -1,21 +1,18 @@
 // src/components/ProtectedRoute.jsx
-import { useAuth } from '../context/AuthContext';
 import { Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
-export default function ProtectedRoute({ children, adminOnly = false }) {
+export default function ProtectedRoute({ children, requiredRole = null }) {
   const { currentUser } = useAuth();
-  const location = useLocation(); // Сохраняем текущий путь
+  const location = useLocation();
 
   if (!currentUser) {
-    // 🔁 Не авторизован → на /login, с указанием, откуда пришёл
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (adminOnly && currentUser.role !== 'admin') {
-    // 🔏 Не админ → на клиентский кабинет
-    return <Navigate to="/client-dashboard" replace />;
+  if (requiredRole && currentUser.role !== requiredRole) {
+    return <Navigate to="/" replace />;
   }
 
-  // ✅ Всё ок — рендерим
   return children;
 }

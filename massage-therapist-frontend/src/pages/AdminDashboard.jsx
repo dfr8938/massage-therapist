@@ -1,541 +1,634 @@
 // src/pages/AdminDashboard.jsx
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { FaUser, FaCalendarAlt, FaComment, FaEnvelope, FaStar, FaWhatsapp, FaTelegram, FaEdit, FaCheck, FaArrowLeft } from 'react-icons/fa';
 import { useState, useEffect } from 'react';
-import { FaUserFriends, FaEnvelope, FaCalendarCheck, FaWallet, FaChevronRight, FaPlus, FaTrash, FaEdit } from 'react-icons/fa';
 
 export default function AdminDashboard() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+
   const [isVisible, setIsVisible] = useState(false);
-  const [stats, setStats] = useState(null);
-  const [appointments, setAppointments] = useState([]);
-  const [messages, setMessages] = useState([]);
   const [clients, setClients] = useState([]);
-  const [services, setServices] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const token = localStorage.getItem('token');
+  // Форма добавления отзыва
+  const [reviewForm, setReviewForm] = useState({ clientId: '', text: '', rating: 5 });
+  const [isAddingReview, setIsAddingReview] = useState(false);
 
-  // Модалки
-  const [showAddService, setShowAddService] = useState(false);
-  const [showAddClient, setShowAddClient] = useState(false);
-  const [editService, setEditService] = useState(null); // { id, name, price, ... }
-  const [editClient, setEditClient] = useState(null); // { id, name, phone, email }
+  // Редактирование профиля
+  const [isEditing, setIsEditing] = useState(false);
+  const [adminName, setAdminName] = useState('Екатерина');
 
-  // Формы
-  const [newService, setNewService] = useState({ name: '', price: '', duration: '', description: '' });
-  const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' });
-
-  // Загрузка данных
   useEffect(() => {
     if (!currentUser || currentUser.role !== 'admin') {
       navigate('/login');
       return;
     }
 
-    const fetchData = async () => {
-      try {
-        const headers = { 'Authorization': `Bearer ${token}` };
-
-        const [statsRes, appsRes, msgsRes, clientsRes, servicesRes] = await Promise.all([
-          fetch('http://localhost:5000/api/admin/stats', { headers }),
-          fetch('http://localhost:5000/api/admin/appointments?limit=5', { headers }),
-          fetch('http://localhost:5000/api/admin/messages?limit=5', { headers }),
-          fetch('http://localhost:5000/api/admin/clients', { headers }),
-          fetch('http://localhost:5000/api/admin/services', { headers }),
-        ]);
-
-        const statsData = await statsRes.json();
-        const appsData = await appsRes.json();
-        const msgsData = await msgsRes.json();
-        const clientsData = await clientsRes.json();
-        const servicesData = await servicesRes.json();
-
-        setStats(statsData);
-        setAppointments(appsData);
-        setMessages(msgsData);
-        setClients(clientsData);
-        setServices(servicesData);
-      } catch (err) {
-        console.error('Ошибка загрузки:', err);
-        alert('Не удалось загрузить данные.');
-        navigate('/login');
-      }
-    };
-
-    if (token) {
-      fetchData();
-    }
-  }, [token, currentUser, navigate]);
+    // Загружаем данные из db.json
+    fetch('/db.json')
+      .then((res) => res.json())
+      .then((data) => {
+        setClients(data.clients || []);
+        setAppointments(data.appointments || []);
+        setReviews(data.reviews || []);
+        setMessages(data.messages || []);
+      })
+      .finally(() => setLoading(false));
+  }, [currentUser, navigate]);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
-  // === ДОБАВЛЕНИЕ УСЛУГИ ===
-  const handleAddService = async (e) => {
-    e.preventDefault();
-    if (!newService.name || !newService.price || !newService.duration) {
-      alert('Название, цена и длительность обязательны');
-      return;
-    }
-
-    try {
-      const res = await fetch('http://localhost:5000/api/admin/services', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(newService),
-      });
-
-      if (res.ok) {
-        const added = await res.json();
-        setServices([...services, added]);
-        setNewService({ name: '', price: '', duration: '', description: '' });
-        setShowAddService(false);
-      } else {
-        const error = await res.json();
-        alert(`Ошибка: ${error.error}`);
-      }
-    } catch (err) {
-      alert('Ошибка подключения');
-    }
-  };
-
-  // === РЕДАКТИРОВАНИЕ УСЛУГИ ===
-  const handleEditService = async (e) => {
-    e.preventDefault();
-    const { id, name, price, duration, description } = editService;
-    if (!name || !price || !duration) {
-      alert('Заполните все обязательные поля');
-      return;
-    }
-
-    try {
-      const res = await fetch(`http://localhost:5000/api/admin/services/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name, price, duration, description }),
-      });
-
-      if (res.ok) {
-        const updated = await res.json();
-        setServices(services.map(s => s.id === id ? updated : s));
-        setEditService(null);
-      } else {
-        const error = await res.json();
-        alert(`Ошибка: ${error.error}`);
-      }
-    } catch (err) {
-      alert('Ошибка подключения');
-    }
-  };
-
-  // === ДОБАВЛЕНИЕ КЛИЕНТА ===
-  const handleAddClient = async (e) => {
-    e.preventDefault();
-    if (!newClient.name || !newClient.phone) {
-      alert('Имя и телефон обязательны');
-      return;
-    }
-
-    try {
-      const res = await fetch('http://localhost:5000/api/admin/clients', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(newClient),
-      });
-
-      if (res.ok) {
-        const added = await res.json();
-        setClients([...clients, added]);
-        setNewClient({ name: '', phone: '', email: '' });
-        setShowAddClient(false);
-      } else {
-        const error = await res.json();
-        alert(`Ошибка: ${error.error}`);
-      }
-    } catch (err) {
-      alert('Ошибка подключения');
-    }
-  };
-
-  // === РЕДАКТИРОВАНИЕ КЛИЕНТА ===
-  const handleEditClient = async (e) => {
-    e.preventDefault();
-    const { id, name, phone, email } = editClient;
-    if (!name || !phone) {
-      alert('Имя и телефон обязательны');
-      return;
-    }
-
-    try {
-      const res = await fetch(`http://localhost:5000/api/admin/clients/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name, phone, email }),
-      });
-
-      if (res.ok) {
-        const updated = await res.json();
-        setClients(clients.map(c => c.id === id ? updated : c));
-        setEditClient(null);
-      } else {
-        const error = await res.json();
-        alert(`Ошибка: ${error.error}`);
-      }
-    } catch (err) {
-      alert('Ошибка подключения');
-    }
-  };
-
-  // === УДАЛЕНИЕ КЛИЕНТА ===
-  const handleDeleteClient = async (clientId) => {
-    if (!window.confirm('Удалить клиента? Это действие нельзя отменить.')) return;
-
-    try {
-      const res = await fetch(`http://localhost:5000/api/admin/clients/${clientId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (res.ok) {
-        setClients(clients.filter(c => c.id !== clientId));
-      } else {
-        alert('Не удалось удалить');
-      }
-    } catch (err) {
-      alert('Ошибка подключения');
-    }
-  };
-
-  if (!stats) {
-    return <div style={styles.loading}>Загрузка...</div>;
+  if (loading) {
+    return <div style={styles.loading}>Загрузка админ-панели...</div>;
   }
+
+  if (!currentUser || currentUser.role !== 'admin') {
+    return <div style={styles.error}>Доступ запрещён</div>;
+  }
+
+  // Статистика
+  const totalClients = clients.length;
+  const totalAppointments = appointments.length;
+  const avgRating = reviews.length > 0
+    ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
+    : '—';
+
+  // Добавление отзыва
+  const handleAddReview = () => {
+    if (!reviewForm.clientId || !reviewForm.text.trim()) return;
+
+    const newReview = {
+      id: Date.now(),
+      client_id: parseInt(reviewForm.clientId),
+      rating: reviewForm.rating,
+      text: reviewForm.text,
+      created_at: new Date().toISOString(),
+    };
+
+    setReviews([newReview, ...reviews]);
+    setReviewForm({ clientId: '', text: '', rating: 5 });
+    setIsAddingReview(false);
+  };
+
+  const handleCancelReview = () => {
+    setReviewForm({ clientId: '', text: '', rating: 5 });
+    setIsAddingReview(false);
+  };
+
+  const renderStars = (value, onChange) => {
+    return (
+      <div style={styles.stars}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <FaStar
+            key={star}
+            size={18}
+            style={{ cursor: 'pointer', color: star <= value ? '#fbbf24' : '#d1d5db' }}
+            onClick={() => onChange(star)}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div style={styles.container}>
-      {/* Hero */}
-      <section style={{ ...styles.hero, ...animatedStyles(isVisible, 0) }}>
+      {/* Hero Section */}
+      <section
+        style={{
+          ...styles.hero,
+          opacity: isVisible ? 1 : 0,
+          transform: isVisible ? 'translateY(0)' : 'translateY(-20px)',
+          transition: 'opacity 0.8s ease, transform 0.8s ease',
+        }}
+      >
         <h1 style={styles.heroTitle}>Админ-панель</h1>
-        <p style={styles.heroText}>Добро пожаловать, Админ 👋 Управляйте клиентами, услугами, записями и сообщениями.</p>
+        <p style={styles.heroText}>
+          Добро пожаловать, {adminName}! Управляйте клиентами, записями и отзывами.
+        </p>
       </section>
 
       <div style={styles.content}>
         {/* Статистика */}
-        <div style={styles.grid}>
-          <DashboardCard title="Клиенты" value={stats.clients} icon={<FaUserFriends size={28} color="#4f46e5" />} color="#4f46e5" delay={0.2} />
-          <DashboardCard title="Сообщения" value={stats.messages} icon={<FaEnvelope size={28} color="#06b6d4" />} color="#06b6d4" delay={0.3} />
-          <DashboardCard title="Подтверждённые" value={stats.confirmedAppointments} icon={<FaCalendarCheck size={28} color="#10b981" />} color="#10b981" delay={0.4} />
-          <DashboardCard title="Средний рейтинг" value={`${stats.averageRating.toFixed(1)} ⭐`} icon={<FaWallet size={28} color="#f59e0b" />} color="#f59e0b" delay={0.5} />
-        </div>
-
-        {/* Кнопки действий */}
-        <div style={styles.actions}>
-          <button onClick={() => setShowAddService(true)} style={styles.btnPrimary}>
-            <FaPlus /> Добавить услугу
-          </button>
-          <button onClick={() => setShowAddClient(true)} style={styles.btnPrimary}>
-            <FaPlus /> Добавить клиента
-          </button>
-        </div>
-
-        {/* Услуги */}
-        <section style={{ ...styles.section, ...animatedStyles(isVisible, 0.6) }}>
-          <h2 style={styles.sectionTitle}>Услуги</h2>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th>Название</th>
-                <th>Цена</th>
-                <th>Длительность</th>
-                <th>Описание</th>
-                <th>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.map(s => (
-                <tr key={s.id}>
-                  {editService?.id === s.id ? (
-                    <EditServiceForm
-                      service={editService}
-                      onChange={setEditService}
-                      onSave={handleEditService}
-                      onCancel={() => setEditService(null)}
-                    />
-                  ) : (
-                    <>
-                      <td>{s.name}</td>
-                      <td>{s.price} ₽</td>
-                      <td>{s.duration} мин</td>
-                      <td>{s.description || '—'}</td>
-                      <td style={styles.actionCell}>
-                        <button onClick={() => setEditService(s)} style={styles.btnEdit}>
-                          <FaEdit size={14} /> Ред.
-                        </button>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <section
+          style={{
+            ...styles.section,
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
+            transition: 'opacity 0.8s ease 0.2s, transform 0.8s ease 0.2s',
+          }}
+        >
+          <h2 style={styles.sectionTitle}>
+            <FaUser style={styles.icon} /> Статистика
+          </h2>
+          <div style={styles.stats}>
+            <div style={styles.statCard}>
+              <h3>Клиенты</h3>
+              <p style={styles.statNumber}>{totalClients}</p>
+            </div>
+            <div style={styles.statCard}>
+              <h3>Записи</h3>
+              <p style={styles.statNumber}>{totalAppointments}</p>
+            </div>
+            <div style={styles.statCard}>
+              <h3>Рейтинг</h3>
+              <p style={styles.statNumber}>{avgRating}</p>
+              <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                {Array.from({ length: Math.floor(avgRating) }).map((_, i) => (
+                  <FaStar key={i} size={14} color="#fbbf24" />
+                ))}
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Клиенты */}
-        <section style={{ ...styles.section, ...animatedStyles(isVisible, 0.7) }}>
-          <h2 style={styles.sectionTitle}>Клиенты</h2>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th>Имя</th>
-                <th>Телефон</th>
-                <th>Email</th>
-                <th>Посещений</th>
-                <th>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clients.map(c => (
-                <tr key={c.id}>
-                  {editClient?.id === c.id ? (
-                    <EditClientForm
-                      client={editClient}
-                      onChange={setEditClient}
-                      onSave={handleEditClient}
-                      onCancel={() => setEditClient(null)}
-                    />
-                  ) : (
-                    <>
-                      <td>{c.name}</td>
-                      <td>{c.phone}</td>
-                      <td>{c.email || '—'}</td>
-                      <td>{c.visit_count}</td>
-                      <td style={styles.actionCell}>
-                        <button onClick={() => setEditClient(c)} style={styles.btnEdit}>
-                          <FaEdit size={14} /> Ред.
-                        </button>
-                        <button onClick={() => handleDeleteClient(c.id)} style={styles.btnDelete}>
-                          <FaTrash size={14} /> Удалить
-                        </button>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        <section
+          style={{
+            ...styles.section,
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
+            transition: 'opacity 0.8s ease 0.3s, transform 0.8s ease 0.3s',
+          }}
+        >
+          <h2 style={styles.sectionTitle}>
+            <FaUser style={styles.icon} /> Все клиенты
+          </h2>
 
-        {/* Последние записи */}
-        <section style={{ ...styles.section, ...animatedStyles(isVisible, 0.8) }}>
-          <h2 style={styles.sectionTitle}>Последние записи</h2>
-          {appointments.length === 0 ? (
-            <p style={styles.empty}>Нет записей</p>
+          {clients.length === 0 ? (
+            <p style={styles.empty}>Нет клиентов</p>
           ) : (
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th>Клиент</th>
-                  <th>Услуга</th>
-                  <th>Дата</th>
-                  <th>Время</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {appointments.map(appt => (
-                  <tr key={appt.id}>
-                    <td>{appt.client_name || appt.client?.name}</td>
-                    <td>{appt.service_name}</td>
-                    <td>{formatDate(appt.date)}</td>
-                    <td>{appt.time}</td>
-                    <td style={styles.actionCell}><FaChevronRight size={16} color="#94a3b8" /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
-        {/* Сообщения */}
-        <section style={{ ...styles.section, ...animatedStyles(isVisible, 0.9) }}>
-          <h2 style={styles.sectionTitle}>Новые сообщения</h2>
-          {messages.length === 0 ? (
-            <p style={styles.empty}>Нет сообщений</p>
-          ) : (
-            <div style={styles.messages}>
-              {messages.map(msg => (
-                <div key={msg.id} style={styles.message}>
-                  <div style={styles.messageHeader}>
-                    <strong>{msg.name}</strong>
-                    <span style={styles.time}>
-                      {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <p style={styles.messageText}>{msg.message}</p>
+            <div style={styles.clients}>
+              {clients.map((client) => (
+                <div key={client.id} style={styles.clientCard}>
+                  <h4 style={styles.cardTitle}>{client.name}</h4>
+                  <p style={styles.cardText}>Телефон: {client.phone}</p>
+                  <p style={styles.cardText}>Посещений: {client.visit_count || 0}</p>
+                  <p style={styles.cardText}>
+                    Последнее: {client.last_visit ? new Date(client.last_visit).toLocaleDateString('ru-RU') : '—'}
+                  </p>
+                  <p style={styles.cardText}>Любимая услуга: {client.favorite_service || '—'}</p>
                 </div>
               ))}
             </div>
           )}
         </section>
 
-        {/* CTA */}
-        <div style={{ ...styles.backSection, ...animatedStyles(isVisible, 1.0) }}>
-          <button onClick={() => navigate(-1)} style={styles.backBtn}>← Назад на сайт</button>
+        {/* Записи */}
+        <section
+          style={{
+            ...styles.section,
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
+            transition: 'opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s',
+          }}
+        >
+          <h2 style={styles.sectionTitle}>
+            <FaCalendarAlt style={styles.icon} /> Все записи
+          </h2>
+
+          {appointments.length === 0 ? (
+            <p style={styles.empty}>Нет записей</p>
+          ) : (
+            <div style={styles.appointments}>
+              {appointments.map((app) => {
+                const client = clients.find((c) => c.id === app.client_id);
+                return (
+                  <div key={app.id} style={styles.appointmentCard}>
+                    <h4 style={styles.cardTitle}>{client?.name || 'Неизвестно'}</h4>
+                    <p style={styles.cardText}>
+                      {new Date(app.date).toLocaleDateString('ru-RU')}, {app.time}
+                    </p>
+                    <span style={{ ...styles.status, ...styles.status[app.status] }}>{app.status}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Отзывы */}
+        <section
+          style={{
+            ...styles.section,
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
+            transition: 'opacity 0.8s ease 0.5s, transform 0.8s ease 0.5s',
+          }}
+        >
+          <h2 style={styles.sectionTitle}>
+            <FaComment style={styles.icon} /> Ваши отзывы
+          </h2>
+
+          {/* Добавление отзыва */}
+          {!isAddingReview ? (
+            <button
+              onClick={() => setIsAddingReview(true)}
+              style={styles.addReviewBtn}
+            >
+              + Добавить отзыв
+            </button>
+          ) : (
+            <div style={styles.reviewForm}>
+              <h4 style={styles.editTitle}>Добавить отзыв</h4>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Клиент</label>
+                <select
+                  value={reviewForm.clientId}
+                  onChange={(e) => setReviewForm({ ...reviewForm, clientId: e.target.value })}
+                  style={styles.input}
+                >
+                  <option value="">Выберите клиента</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {renderStars(reviewForm.rating, (rating) => setReviewForm({ ...reviewForm, rating }))}
+              <textarea
+                value={reviewForm.text}
+                onChange={(e) => setReviewForm({ ...reviewForm, text: e.target.value })}
+                placeholder="Текст отзыва"
+                style={styles.textarea}
+              />
+              <div style={styles.buttonGroup}>
+                <button onClick={handleCancelReview} style={styles.cancelBtn}>
+                  Отмена
+                </button>
+                <button onClick={handleAddReview} style={styles.saveBtn}>
+                  <FaCheck style={{ marginRight: '8px' }} /> Добавить
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Список отзывов */}
+          {reviews.length > 0 ? (
+            <div style={styles.reviews}>
+              {reviews.map((r) => {
+                const client = clients.find((c) => c.id === r.client_id);
+                return (
+                  <div key={r.id} style={styles.reviewCard}>
+                    <div style={styles.reviewHeader}>
+                      <strong>{client?.name || 'Клиент'}</strong>
+                      <div style={styles.reviewStars}>
+                        {Array.from({ length: r.rating }).map((_, i) => (
+                          <FaStar key={i} size={14} color="#fbbf24" />
+                        ))}
+                      </div>
+                    </div>
+                    <p style={styles.reviewText}>{r.text}</p>
+                    <small style={styles.reviewDate}>
+                      {new Date(r.created_at).toLocaleDateString('ru-RU')}
+                    </small>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p style={styles.empty}>Пока нет отзывов</p>
+          )}
+        </section>
+
+        {/* Сообщения */}
+        <section
+          style={{
+            ...styles.section,
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
+            transition: 'opacity 0.8s ease 0.6s, transform 0.8s ease 0.6s',
+          }}
+        >
+          <h2 style={styles.sectionTitle}>
+            <FaEnvelope style={styles.icon} /> Сообщения
+          </h2>
+
+          {messages.length === 0 ? (
+            <p style={styles.empty}>Нет сообщений</p>
+          ) : (
+            <div style={styles.messages}>
+              {messages.map((msg) => (
+                <div key={msg.id} style={styles.messageCard}>
+                  <h4 style={styles.cardTitle}>
+                    {msg.name} <small style={styles.messageEmail}>({msg.email})</small>
+                  </h4>
+                  <p style={{ ...styles.cardText, whiteSpace: 'pre-wrap' }}>{msg.message}</p>
+                  {msg.phone && <p style={styles.cardText}>📞 {msg.phone}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Связь */}
+        <section
+          style={{
+            ...styles.section,
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
+            transition: 'opacity 0.8s ease 0.7s, transform 0.8s ease 0.7s',
+          }}
+        >
+          <h2 style={styles.sectionTitle}>
+            <FaComment style={styles.icon} /> Быстрая связь
+          </h2>
+          <div style={styles.contactButtons}>
+            <a href="https://wa.me/79255616201" target="_blank" rel="noreferrer" style={styles.contactBtn}>
+              <FaWhatsapp /> WhatsApp
+            </a>
+            <a href="https://t.me/katya_massage" target="_blank" rel="noreferrer" style={styles.contactBtn}>
+              <FaTelegram /> Telegram
+            </a>
+            <a href="mailto:gorelovaee01@gmail.com" style={styles.contactBtn}>
+              <FaEnvelope /> Email
+            </a>
+          </div>
+        </section>
+
+        {/* Назад */}
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '3rem 1rem',
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
+            transition: 'opacity 0.8s ease 0.8s, transform 0.8s ease 0.8s',
+          }}
+        >
+          <button onClick={() => navigate(-1)} style={styles.backBtn}>
+            <FaArrowLeft style={{ marginRight: '8px' }} /> Назад
+          </button>
         </div>
       </div>
-
-      {/* Модалка: Добавить услугу */}
-      {showAddService && (
-        <Modal onClose={() => setShowAddService(false)}>
-          <h3 style={styles.modalTitle}>Добавить услугу</h3>
-          <form onSubmit={handleAddService} style={styles.form}>
-            <input placeholder="Название" value={newService.name} onChange={e => setNewService({ ...newService, name: e.target.value })} style={styles.input} required />
-            <input type="number" placeholder="Цена (₽)" value={newService.price} onChange={e => setNewService({ ...newService, price: e.target.value })} style={styles.input} required />
-            <input type="number" placeholder="Длительность (мин)" value={newService.duration} onChange={e => setNewService({ ...newService, duration: e.target.value })} style={styles.input} required />
-            <textarea placeholder="Описание (опционально)" value={newService.description} onChange={e => setNewService({ ...newService, description: e.target.value })} style={styles.textarea} />
-            <div style={styles.modalActions}>
-              <button type="button" onClick={() => setShowAddService(false)} style={styles.btnCancel}>Отмена</button>
-              <button type="submit" style={styles.btnSave}>Добавить</button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* Модалка: Добавить клиента */}
-      {showAddClient && (
-        <Modal onClose={() => setShowAddClient(false)}>
-          <h3 style={styles.modalTitle}>Добавить клиента</h3>
-          <form onSubmit={handleAddClient} style={styles.form}>
-            <input placeholder="Имя" value={newClient.name} onChange={e => setNewClient({ ...newClient, name: e.target.value })} style={styles.input} required />
-            <input placeholder="Телефон" value={newClient.phone} onChange={e => setNewClient({ ...newClient, phone: e.target.value })} style={styles.input} required />
-            <input placeholder="Email (опционально)" value={newClient.email} onChange={e => setNewClient({ ...newClient, email: e.target.value })} style={styles.input} />
-            <div style={styles.modalActions}>
-              <button type="button" onClick={() => setShowAddClient(false)} style={styles.btnCancel}>Отмена</button>
-              <button type="submit" style={styles.btnSave}>Добавить</button>
-            </div>
-          </form>
-        </Modal>
-      )}
     </div>
   );
 }
 
-// === ВСПОМОГАТЕЛЬНЫЕ КОМПОНЕНТЫ ===
-
-// Форма редактирования услуги
-function EditServiceForm({ service, onChange, onSave, onCancel }) {
-  return (
-    <form onSubmit={onSave} style={{ display: 'contents' }}>
-      <td><input value={service.name} onChange={e => onChange({ ...service, name: e.target.value })} style={styles.inputInline} required /></td>
-      <td><input type="number" value={service.price} onChange={e => onChange({ ...service, price: e.target.value })} style={styles.inputInline} required /></td>
-      <td><input type="number" value={service.duration} onChange={e => onChange({ ...service, duration: e.target.value })} style={styles.inputInline} required /></td>
-      <td><input value={service.description} onChange={e => onChange({ ...service, description: e.target.value })} style={styles.inputInline} /></td>
-      <td style={styles.actionCell}>
-        <button type="submit" style={{ ...styles.btnEdit, marginRight: '0.5rem' }}>✔️</button>
-        <button type="button" onClick={onCancel} style={styles.btnCancel}>❌</button>
-      </td>
-    </form>
-  );
-}
-
-// Форма редактирования клиента
-function EditClientForm({ client, onChange, onSave, onCancel }) {
-  return (
-    <form onSubmit={onSave} style={{ display: 'contents' }}>
-      <td><input value={client.name} onChange={e => onChange({ ...client, name: e.target.value })} style={styles.inputInline} required /></td>
-      <td><input value={client.phone} onChange={e => onChange({ ...client, phone: e.target.value })} style={styles.inputInline} required /></td>
-      <td><input value={client.email || ''} onChange={e => onChange({ ...client, email: e.target.value })} style={styles.inputInline} /></td>
-      <td>{client.visit_count}</td>
-      <td style={styles.actionCell}>
-        <button type="submit" style={{ ...styles.btnEdit, marginRight: '0.5rem' }}>✔️</button>
-        <button type="button" onClick={onCancel} style={styles.btnCancel}>❌</button>
-      </td>
-    </form>
-  );
-}
-
-// Модальное окно
-function Modal({ children, onClose }) {
-  return (
-    <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// Формат даты
-function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString('ru-RU');
-}
-
-// Анимация появления
-function animatedStyles(visible, delay = 0) {
-  return visible
-    ? {
-        opacity: 1,
-        transform: 'translateY(0)',
-        transition: `opacity 0.8s ease ${delay}s, transform 0.8s ease ${delay}s`,
-      }
-    : {
-        opacity: 0,
-        transform: 'translateY(30px)',
-      };
-}
-
-// === СТИЛИ ===
+// Стили (остаются как в ClientDashboard)
 const styles = {
-  // ... (все стили как выше, плюс новое)
-  inputInline: {
-    padding: '0.5rem',
+  container: {
+    padding: '0',
+    maxWidth: '1200px',
+    margin: '0 auto',
+    fontFamily: 'Inter, -apple-system, sans-serif',
+    backgroundColor: '#f9fafb',
+  },
+  loading: {
+    textAlign: 'center',
+    padding: '4rem',
+    fontSize: '1.2rem',
+    color: '#475569',
+  },
+  error: {
+    textAlign: 'center',
+    padding: '4rem',
+    color: '#e53e3e',
+    fontSize: '1.2rem',
+  },
+  hero: {
+    textAlign: 'center',
+    padding: '6rem 1.5rem 5rem',
+    background: 'linear-gradient(135deg, #f0f5ff 0%, #eef2ff 100%)',
+    color: '#1e293b',
+    margin: '0 0 4rem 0',
+    borderRadius: '0 0 20px 20px',
+  },
+  heroTitle: {
+    fontSize: '3rem',
+    margin: '0 0 1rem 0',
+    fontWeight: '700',
+    color: '#1e3a8a',
+    fontFamily: '"Playfair Display", serif',
+  },
+  heroText: {
+    fontSize: '1.25rem',
+    color: '#475569',
+    maxWidth: '700px',
+    margin: '0 auto 2rem',
+    lineHeight: '1.7',
+  },
+  content: {
+    padding: '0 2rem 4rem',
+  },
+  section: {
+    backgroundColor: 'white',
+    padding: '2.5rem',
+    borderRadius: '16px',
+    marginBottom: '3rem',
+    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
     border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    fontSize: '0.95rem',
-    width: '100%',
-    boxSizing: 'border-box',
   },
-  btnEdit: {
-    padding: '0.5rem 0.75rem',
-    backgroundColor: '#667eea',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
+  sectionTitle: {
+    fontSize: '1.8rem',
+    color: '#1e293b',
+    fontFamily: '"Playfair Display", serif',
+    marginBottom: '2rem',
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
+    gap: '0.75rem',
   },
-  btnDelete: {
-    padding: '0.5rem 0.75rem',
-    backgroundColor: '#e53e3e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
+  icon: {
+    color: '#4f46e5',
+  },
+  stats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '1.5rem',
+  },
+  statCard: {
+    padding: '1.5rem',
+    backgroundColor: '#f8fafc',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #e2e8f0',
+  },
+  statNumber: {
+    fontSize: '2.5rem',
+    fontWeight: '700',
+    color: '#1e3a8a',
+    margin: '0.5rem 0 0 0',
+  },
+  clients: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
+    flexDirection: 'column',
+    gap: '1rem',
   },
-  btnCancel: {
+  clientCard: {
+    padding: '1.5rem',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    backgroundColor: '#f8fafc',
+  },
+  appointments: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+  },
+  appointmentCard: {
+    padding: '1.5rem',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    backgroundColor: '#f8fafc',
+  },
+  cardTitle: {
+    fontSize: '1.2rem',
+    margin: '0 0 0.5rem 0',
+    color: '#1e293b',
+    fontWeight: '600',
+  },
+  cardText: {
+    color: '#475569',
+    margin: '0 0 0.75rem 0',
+  },
+  status: {
+    padding: '0.4rem 0.8rem',
+    borderRadius: '999px',
+    fontSize: '0.9rem',
+    fontWeight: '500',
+    display: 'inline-block',
+    textTransform: 'lowercase',
+  },
+  'Подтверждена': { backgroundColor: '#dcfce7', color: '#166534' },
+  'Завершена': { backgroundColor: '#dbeafe', color: '#1e40af' },
+  'Ожидание': { backgroundColor: '#fef9c3', color: '#854d0e' },
+  'Отменена': { backgroundColor: '#fee2e2', color: '#991b1b' },
+  stars: { display: 'flex', gap: '6px', marginBottom: '1rem' },
+  reviews: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+  },
+  reviewCard: {
+    padding: '1.5rem',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+  },
+  reviewHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '0.75rem',
+    color: '#1e293b',
+  },
+  reviewStars: {
+    display: 'flex',
+    gap: '4px',
+    alignItems: 'center',
+  },
+  reviewText: {
+    color: '#475569',
+    lineHeight: '1.7',
+    marginBottom: '0.5rem',
+  },
+  reviewDate: {
+    color: '#64748b',
+    fontSize: '0.9rem',
+  },
+  messages: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+  },
+  messageCard: {
+    padding: '1.5rem',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    backgroundColor: '#f8fafc',
+  },
+  messageEmail: {
+    color: '#64748b',
+    fontSize: '0.9rem',
+  },
+  contactButtons: {
+    display: 'flex',
+    gap: '1rem',
+    flexWrap: 'wrap',
+  },
+  contactBtn: {
+    flex: 1,
     padding: '0.875rem',
+    textAlign: 'center',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    textDecoration: 'none',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    fontWeight: '500',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
+  },
+  addReviewBtn: {
+    padding: '0.875rem 1.75rem',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: '600',
+    fontSize: '1.1rem',
+    marginBottom: '1.5rem',
+  },
+  reviewForm: {
+    padding: '1.5rem',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    backgroundColor: '#f8fafc',
+    marginBottom: '1.5rem',
+  },
+  editTitle: {
+    margin: '0 0 1rem 0',
+    fontSize: '1.25rem',
+    color: '#1e293b',
+    fontWeight: '600',
+  },
+  inputGroup: {
+    marginBottom: '1.5rem',
+  },
+  label: {
+    fontSize: '0.95rem',
+    color: '#334155',
+    fontWeight: '500',
+    display: 'block',
+    marginBottom: '0.5rem',
+  },
+  input: {
+    width: '100%',
+    padding: '0.875rem',
+    border: '2px solid #e2e8f0',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    outline: 'none',
+    transition: 'all 0.2s ease',
+  },
+  textarea: {
+    width: '100%',
+    padding: '0.875rem',
+    border: '2px solid #e2e8f0',
+    borderRadius: '12px',
+    fontSize: '1rem',
+    minHeight: '120px',
+    resize: 'vertical',
+    outline: 'none',
+    transition: 'all 0.2s ease',
+  },
+  buttonGroup: {
+    display: 'flex',
+    gap: '1rem',
+    marginTop: '1.5rem',
+  },
+  cancelBtn: {
+    padding: '0.875rem 1.75rem',
     backgroundColor: '#f8fafc',
     color: '#4f46e5',
     border: '2px solid #4f46e5',
@@ -544,7 +637,7 @@ const styles = {
     fontWeight: '500',
     fontSize: '1.1rem',
   },
-  btnSave: {
+  saveBtn: {
     padding: '0.875rem 1.75rem',
     backgroundColor: '#4f46e5',
     color: 'white',
@@ -553,96 +646,24 @@ const styles = {
     cursor: 'pointer',
     fontWeight: '500',
     fontSize: '1.1rem',
+    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
   },
-  modalActions: {
-    display: 'flex',
-    gap: '1rem',
-    marginTop: '2rem',
+  empty: {
+    color: '#64748b',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    padding: '1.5rem',
   },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000,
-  },
-  modal: {
-    backgroundColor: 'white',
-    borderRadius: '16px',
-    padding: '2.5rem',
-    width: '90%',
-    maxWidth: '500px',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-  },
-  modalTitle: {
-    fontSize: '1.5rem',
+  backBtn: {
+    backgroundColor: '#f8fafc',
+    color: '#4f46e5',
+    padding: '1rem 2.5rem',
+    borderRadius: '12px',
+    border: '2px solid #4f46e5',
     fontWeight: '600',
-    marginBottom: '1.5rem',
-    color: '#1e293b',
+    fontSize: '1.2rem',
+    display: 'inline-block',
+    textDecoration: 'none',
+    transition: 'all 0.2s ease',
   },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-  },
-  input: {
-    padding: '0.875rem',
-    border: '2px solid #e2e8f0',
-    borderRadius: '12px',
-    fontSize: '1rem',
-    outline: 'none',
-  },
-  textarea: {
-    padding: '0.875rem',
-    border: '2px solid #e2e8f0',
-    borderRadius: '12px',
-    fontSize: '1rem',
-    minHeight: '100px',
-    resize: 'vertical',
-  },
-  // ... остальные стили — как в предыдущей версии
 };
-
-// Глобальные стили — те же
-const styleEl = document.createElement('style');
-styleEl.textContent = `
-  th, td {
-    text-align: left;
-    padding: 1.2rem;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  th {
-    background-color: #f8fafc;
-    font-weight: 700;
-    color: #475569;
-    font-size: 0.95rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  tr:hover td {
-    background-color: #f1f5f9;
-    border-color: #bfdbfe;
-  }
-  tr:last-child td {
-    border-bottom: none;
-  }
-  .btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 15px rgba(79, 70, 229, 0.35);
-  }
-  @media (max-width: 768px) {
-    .grid { grid-template-columns: 1fr; gap: 1.5rem; }
-    .actions { flex-direction: column; }
-  }
-`;
-styleEl.id = 'admin-dashboard-styles';
-if (!document.head.querySelector('#admin-dashboard-styles')) {
-  document.head.appendChild(styleEl);
-}
